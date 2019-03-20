@@ -56,6 +56,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import static com.aware.Aware.TAG;
+
 /**
  * @author df
  */
@@ -175,6 +177,33 @@ public class Aware_Client extends Aware_Activity implements SharedPreferences.On
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+        if(key.equalsIgnoreCase("databasePassword")){
+            String password = String.valueOf(sharedPreferences.getString(key, ""));
+            SharedPreferences settings = getSharedPreferences(getApplicationContext().getApplicationContext().getPackageName(), MODE_PRIVATE);
+
+            if(password.length() > 0){
+                String databasePassword = settings.getString("databasePassword", "");
+                if (databasePassword.equalsIgnoreCase("")) {
+                    SharedPreferences.Editor editor = settings.edit();
+                    editor.putString("databasePassword", password);
+                    editor.commit();
+                    Log.d(TAG, "Encryption enabled with new password");
+                }
+                else{
+                    EditTextPreference text = (EditTextPreference) findPreference(key);
+                    text.setText(databasePassword);
+                    Log.d(TAG, "Encryption already enabled. Ignore change in password" + password);
+                    Toast.makeText(getApplicationContext(), "Encryption password can be set only once", Toast.LENGTH_SHORT).show();
+                }
+            }
+            else{
+                String databasePassword = settings.getString("databasePassword", "");
+                EditTextPreference text = (EditTextPreference) findPreference(key);
+                text.setText(databasePassword);
+                Toast.makeText(getApplicationContext(), "Encryption password can be set only once", Toast.LENGTH_SHORT).show();
+            }
+            return;
+        }
         String value = "";
         Map<String, ?> keys = sharedPreferences.getAll();
         if (keys.containsKey(key)) {
@@ -326,7 +355,7 @@ public class Aware_Client extends Aware_Activity implements SharedPreferences.On
         }
 
         if (!permissions_ok) {
-            Log.d(Aware.TAG, "Requesting permissions...");
+            Log.d(TAG, "Requesting permissions...");
 
             Intent permissionsHandler = new Intent(this, PermissionsHandler.class);
             permissionsHandler.putStringArrayListExtra(PermissionsHandler.EXTRA_REQUIRED_PERMISSIONS, REQUIRED_PERMISSIONS);

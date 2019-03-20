@@ -952,6 +952,12 @@
                 android:summary="If Android gives points more often than the requested frequency, ignore them."
                 android:title="Enforce frequency of all sensors" />
 
+            <EditTextPreference
+                android:key="databasePassword"
+                android:persistent="true"
+                android:summary="Type a password to encrypt AWARE databases"
+                android:title="Encrypt databases" />
+
         </PreferenceScreen>
 
     </PreferenceCategory>

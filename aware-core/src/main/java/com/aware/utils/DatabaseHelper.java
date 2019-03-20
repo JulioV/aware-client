@@ -3,13 +3,14 @@ package com.aware.utils;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.SQLException;
-import android.database.sqlite.SQLiteDatabase;
-import android.database.sqlite.SQLiteDatabase.CursorFactory;
-import android.database.sqlite.SQLiteException;
-import android.database.sqlite.SQLiteOpenHelper;
+import net.sqlcipher.database.SQLiteDatabase;
+import net.sqlcipher.database.SQLiteDatabase.CursorFactory;
+import net.sqlcipher.database.SQLiteException;
+import net.sqlcipher.database.SQLiteOpenHelper;
 import android.os.Build;
 import android.os.Environment;
 import android.support.v4.content.ContextCompat;
@@ -18,6 +19,7 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.aware.Aware;
+import com.aware.Aware_Preferences;
 import com.aware.R;
 
 import org.json.JSONArray;
@@ -25,10 +27,13 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+
+import static android.content.Context.MODE_PRIVATE;
 
 /**
  * ContentProvider database helper<br/>
@@ -43,6 +48,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private String TAG = "AwareDBHelper";
 
     private String databaseName;
+    private String databasePassword;
     private String[] databaseTables;
     private String[] tableFields;
     private int newVersion;
@@ -54,12 +60,16 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     public DatabaseHelper(Context context, String database_name, CursorFactory cursor_factory, int database_version, String[] database_tables, String[] table_fields) {
         super(context, database_name, cursor_factory, database_version);
+        SQLiteDatabase.loadLibs(context);
         mContext = context;
         databaseName = database_name;
         databaseTables = database_tables;
         tableFields = table_fields;
         newVersion = database_version;
         cursorFactory = cursor_factory;
+
+        SharedPreferences settings = context.getSharedPreferences(context.getApplicationContext().getPackageName(), MODE_PRIVATE);
+        databasePassword = settings.getString("databasePassword", "");
     }
 
     public void setRenamedColumns(HashMap<String, String> renamed) {
@@ -170,7 +180,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return columns;
     }
 
-    @Override
+    //@Override
     public synchronized SQLiteDatabase getWritableDatabase() {
         try {
             if (database != null) {
@@ -204,7 +214,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
     }
 
-    @Override
+    //@Override
     public synchronized SQLiteDatabase getReadableDatabase() {
         try {
             if (database != null) {
@@ -220,37 +230,93 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     /**
+     * Gets folder to store AWARE's database
+     *
+     * @return
+     */
+    private synchronized File getAwareFolder(){
+        File aware_folder;
+        if (mContext.getResources().getBoolean(R.bool.internalstorage)) {
+            // Internal storage.  This is not acceassible to any other apps and is removed once
+            // app is uninstalled.  Plugins can't use it.  Hard-coded to off, only change if
+            // you know what you are doing.  Beware!
+            aware_folder = mContext.getFilesDir();
+        } else if (!mContext.getResources().getBoolean(R.bool.standalone)) {
+            // sdcard/AWARE/ (shareable, does not delete when uninstalling)
+            aware_folder = new File(Environment.getExternalStoragePublicDirectory("AWARE").toString());
+        } else {
+            if (isEmulator()) {
+                aware_folder = mContext.getFilesDir();
+            } else {
+                // sdcard/Android/<app_package_name>/AWARE/ (not shareable, deletes when uninstalling package)
+                aware_folder = new File(ContextCompat.getExternalFilesDirs(mContext, null)[0] + "/AWARE");
+            }
+        }
+        return aware_folder;
+    }
+    /**
+     * Encrypt database
+     *
+     * @return
+     */
+    public synchronized void encryptDatabase(File plain_database) throws IOException {
+
+        if (plain_database.exists()) {
+            if (DEBUG)
+                Log.d(TAG, String.format("Encryption starting on %s", plain_database.getName()));
+
+            File newFile = File.createTempFile("sqlcipherutilsaware" + databaseName, "tmp", mContext.getCacheDir());
+            SQLiteDatabase db = SQLiteDatabase.openDatabase(plain_database.getAbsolutePath(), "", cursorFactory, SQLiteDatabase.OPEN_READWRITE);
+
+            db.rawExecSQL(String.format("ATTACH DATABASE '%s' AS encrypted KEY '%s';", newFile.getAbsolutePath(), databasePassword));
+            db.rawExecSQL("SELECT sqlcipher_export('encrypted')");
+            db.rawExecSQL("DETACH DATABASE encrypted;");
+
+            int version=db.getVersion();
+            db.close();
+
+            SQLiteDatabase encrypted_db = SQLiteDatabase.openDatabase(newFile.getAbsolutePath(), databasePassword, cursorFactory, SQLiteDatabase.OPEN_READWRITE);
+            encrypted_db.setVersion(version);
+            encrypted_db.close();
+
+            plain_database.delete();
+            newFile.renameTo(plain_database);
+
+            if (DEBUG)
+                Log.d(TAG, String.format("Encryption done %s", plain_database.getName()));
+        }
+        else{
+            if (DEBUG)
+                Log.d(TAG, String.format("Tried to encrypt %s but file does not exist", plain_database.getName()));
+        }
+    }
+
+    /**
      * Retuns the SQLiteDatabase
      *
      * @return
      */
     private synchronized SQLiteDatabase getDatabaseFile() {
         try {
-            File aware_folder;
-            if (mContext.getResources().getBoolean(R.bool.internalstorage)) {
-                // Internal storage.  This is not acceassible to any other apps and is removed once
-                // app is uninstalled.  Plugins can't use it.  Hard-coded to off, only change if
-                // you know what you are doing.  Beware!
-                aware_folder = mContext.getFilesDir();
-            } else if (!mContext.getResources().getBoolean(R.bool.standalone)) {
-                // sdcard/AWARE/ (shareable, does not delete when uninstalling)
-                aware_folder = new File(Environment.getExternalStoragePublicDirectory("AWARE").toString());
-            } else {
-                if (isEmulator()) {
-                    aware_folder = mContext.getFilesDir();
-                } else {
-                    // sdcard/Android/<app_package_name>/AWARE/ (not shareable, deletes when uninstalling package)
-                    aware_folder = new File(ContextCompat.getExternalFilesDirs(mContext, null)[0] + "/AWARE");
-                }
-            }
-
+            File aware_folder = getAwareFolder();
             if (!aware_folder.exists()) {
                 aware_folder.mkdirs();
             }
 
-            database = SQLiteDatabase.openOrCreateDatabase(new File(aware_folder, this.databaseName).getPath(), this.cursorFactory);
+            File database_file = new File(aware_folder, this.databaseName);
+            try{
+                database = SQLiteDatabase.openOrCreateDatabase(database_file, databasePassword, this.cursorFactory);
+            }
+            catch (SQLiteException ex) { // it's impossible open db file - we must encrypt it
+                if(!databasePassword.equalsIgnoreCase("")) {
+                    encryptDatabase(database_file);
+                    database = SQLiteDatabase.openOrCreateDatabase(database_file, databasePassword, this.cursorFactory);
+                }
+            }
+
             return database;
-        } catch (SQLiteException e) {
+        } catch (SQLiteException | IOException e) {
+            Log.d(TAG, String.format("Error opening database %s, %s", databaseName, databasePassword));
             return null;
         }
     }
