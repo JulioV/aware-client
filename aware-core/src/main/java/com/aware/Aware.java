@@ -2230,6 +2230,16 @@ public class Aware extends Service {
             }
 
             if (logging) {
+
+                // Logging boot, reboot, and shutdown events to the screen database
+                if (intent.getAction().equalsIgnoreCase(Intent.ACTION_BOOT_COMPLETED))
+                    context.sendBroadcast(new Intent(Screen.ACTION_AWARE_PHONE_BOOT));
+                else if (intent.getAction().equalsIgnoreCase(Intent.ACTION_REBOOT))
+                    context.sendBroadcast(new Intent(Screen.ACTION_AWARE_PHONE_REBOOT));
+                else if (intent.getAction().equalsIgnoreCase(Intent.ACTION_SHUTDOWN))
+                    context.sendBroadcast(new Intent(Screen.ACTION_AWARE_PHONE_SHUTDOWN));
+
+
                 try {
                     //Retrieve phone battery info
                     ContentValues rowData = new ContentValues();
